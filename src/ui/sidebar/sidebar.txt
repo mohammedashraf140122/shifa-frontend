@@ -1,0 +1,182 @@
+ import {
+  IoHomeOutline,
+  IoChatbubblesOutline,
+  IoMailOutline,
+  IoNotificationsOutline,
+  IoSettingsOutline,
+  IoShieldCheckmarkOutline,
+  IoOptionsOutline,
+  IoChevronDownOutline,
+  IoSettingsSharp,
+} from "react-icons/io5";
+import { useState } from "react";
+import { useNavigate, useLocation } from "react-router-dom";
+import { SYSTEM_MODULES } from "../../config/system-modules.config";
+import Logo from "../../assets/images/logo-en-ar.png";
+import Logo00 from "../../assets/images/logo-mini.png";
+
+export default function Sidebar({ open, lang }) {
+  const [openGroup, setOpenGroup] = useState(null);
+  const navigate = useNavigate();
+  const location = useLocation();
+
+  const isPathActive = (path) => location.pathname === path;
+  const isChildActive = (children) =>
+    children?.some(child => location.pathname === child.path);
+
+  const toggleGroup = (id) => {
+    setOpenGroup(prev => (prev === id ? null : id));
+  };
+
+  const staticItems = [
+    { id: "dashboard", icon: IoHomeOutline, label: { ar: "لوحة التحكم", en: "Dashboard" }, path: "/dashboard" },
+    { id: "chat", icon: IoChatbubblesOutline, label: { ar: "الشات", en: "Chat" }, path: "/chat" },
+  ];
+
+  const footerItems = [
+    { id: "contact", icon: IoMailOutline, label: { ar: "التواصل", en: "Contact" }, path: "/contact" },
+    { id: "alerts", icon: IoNotificationsOutline, label: { ar: "التنبيهات", en: "Alerts" }, path: "/alerts" },
+  ];
+
+  const adminSettings = {
+    id: "admin-settings",
+    icon: IoSettingsOutline,
+    label: { ar: "إعدادات الأدمن", en: "Admin Settings" },
+    children: [
+      { id: "users", icon: IoHomeOutline, label: { ar: "المستخدمين", en: "Users" }, path: "/users" },
+      { id: "roles", icon: IoShieldCheckmarkOutline, label: { ar: "الأدوار", en: "Roles" }, path: "/roles" },
+      { id: "permissions", icon: IoOptionsOutline, label: { ar: "الصلاحيات", en: "Permissions" }, path: "/permissions" },
+      { id: "system-settings", icon: IoSettingsSharp, label: { ar: "صلاحيات النظام", en: "System Settings" }, path: "/systemsettings" },
+    ],
+  };
+
+  return (
+    <aside
+      className={`${open ? "w-44" : "w-0 lg:w-10"} bg-white border-r border-grayMedium h-screen fixed lg:static transition-all overflow-hidden`}
+    >
+      {/* Logo */}
+      <div className="h-[80px] flex items-center px-4 border-b">
+        <img src={open ? Logo : Logo00} className="h-8" />
+        {open && (
+          <div className="ml-2">
+            <div className="text-xs font-bold text-primary">
+              {lang === "ar" ? "مستشفى شفاء" : "Shifa Hospital"}
+            </div>
+            <div className="text-[10px] text-grayTextLight">
+              {lang === "ar" ? "نظام الإدارة" : "Management System"}
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Menu */}
+      <nav className="px-1 py-3 space-y-1">
+        {/* Static */}
+        {staticItems.map(item => {
+          const Icon = item.icon;
+          return (
+            <button
+              key={item.id}
+              onClick={() => navigate(item.path)}
+              className={`w-full flex items-center gap-2 px-2 py-2 rounded-xl
+                ${isPathActive(item.path) ? "bg-primary text-white" : "hover:bg-primaryLight"}`}
+            >
+              <Icon />
+              {open && <span className="text-xs">{item.label[lang]}</span>}
+            </button>
+          );
+        })}
+
+        {/* Dynamic Modules */}
+        {SYSTEM_MODULES.map(module => {
+          const Icon = module.icon;
+          const active = isChildActive(module.children);
+          const opened = openGroup === module.id || active;
+
+          return (
+            <div key={module.id}>
+              <button
+                onClick={() => toggleGroup(module.id)}
+                className={`w-full flex items-center justify-between px-2 py-2 rounded-xl
+                  ${active ? "bg-primary text-white" : "hover:bg-primaryLight"}`}
+              >
+                <div className="flex items-center gap-2">
+                  <Icon />
+                  {open && <span className="text-xs">{module.label[lang]}</span>}
+                </div>
+                {open && <IoChevronDownOutline className={opened ? "rotate-180" : ""} />}
+              </button>
+
+              {open && opened && (
+                <div className="ml-3 mt-1 space-y-1">
+                  {module.children.map(sub => {
+                    const SubIcon = sub.icon;
+                    return (
+                      <button
+                        key={sub.id}
+                        onClick={() => navigate(sub.path)}
+                        className={`w-full flex items-center gap-2 px-2 py-1.5 rounded-lg text-[11px]
+                          ${isPathActive(sub.path) ? "bg-primary/15 text-primary" : "hover:bg-primaryLight/50"}`}
+                      >
+                        <SubIcon />
+                        {sub.label[lang]}
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          );
+        })}
+
+        {/* Footer */}
+        {footerItems.map(item => {
+          const Icon = item.icon;
+          return (
+            <button
+              key={item.id}
+              onClick={() => navigate(item.path)}
+              className="w-full flex items-center gap-2 px-2 py-2 rounded-xl hover:bg-primaryLight"
+            >
+              <Icon />
+              {open && <span className="text-xs">{item.label[lang]}</span>}
+            </button>
+          );
+        })}
+
+        {/* Admin Settings */}
+        <div>
+          <button
+            onClick={() => toggleGroup(adminSettings.id)}
+            className="w-full flex items-center justify-between px-2 py-2 rounded-xl bg-primary text-white"
+          >
+            <div className="flex items-center gap-2">
+              <adminSettings.icon />
+              {open && <span className="text-xs">{adminSettings.label[lang]}</span>}
+            </div>
+            {open && <IoChevronDownOutline />}
+          </button>
+
+          {open && (
+            <div className="ml-3 mt-1 space-y-1">
+              {adminSettings.children.map(sub => {
+                const Icon = sub.icon;
+                return (
+                  <button
+                    key={sub.id}
+                    onClick={() => navigate(sub.path)}
+                    className={`w-full flex items-center gap-2 px-2 py-1.5 rounded-lg text-[11px]
+                      ${isPathActive(sub.path) ? "bg-primary/15 text-primary" : "hover:bg-primaryLight/50"}`}
+                  >
+                    <Icon />
+                    {sub.label[lang]}
+                  </button>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      </nav>
+    </aside>
+  );
+}
