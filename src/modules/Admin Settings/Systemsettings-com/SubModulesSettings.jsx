@@ -1,11 +1,12 @@
-import { useEffect } from "react";
+import { useEffect, useMemo, useState, useRef } from "react";
 import { useOutletContext } from "react-router-dom";
 import {
   IoCheckmarkDone,
   IoClose,
-  IoTrashOutline,
 } from "react-icons/io5";
-import { HiOutlinePencilSquare } from "react-icons/hi2";
+import {
+  HiOutlineMagnifyingGlass,
+} from "react-icons/hi2";
 import {
   getSubModules,
   addSubModules,
@@ -13,6 +14,9 @@ import {
   deleteSubModules,
 } from "../../../core/api/axios";
 import { toast } from "react-toastify";
+import useRBAC from "../../../hooks/useRBAC";
+import { useAuth } from "../../../context/AuthContext";
+import ActionButtons from "../../../components/RBAC/ActionButtons";
 
 export default function SubModulesSettings({
   modules,
@@ -20,7 +24,12 @@ export default function SubModulesSettings({
   setSubModules,
 }) {
   const { lang } = useOutletContext();
+  const { loading } = useAuth();
 
+  /* ================= RBAC ================= */
+  const rbac = useRBAC("Admin Settings", "System Settings");
+
+  /* ================= TEXT ================= */
   const t = {
     title: lang === "ar" ? "الوحدات الفرعية" : "Sub Modules",
     desc:
@@ -28,19 +37,51 @@ export default function SubModulesSettings({
         ? "الوحدات التابعة للوحدات الرئيسية"
         : "Sub modules under main modules.",
     add: lang === "ar" ? "إضافة وحدة فرعية" : "Add Sub Module",
+    search:
+      lang === "ar"
+        ? "بحث بالوحدة أو الوحدة الفرعية"
+        : "Search by module or sub module",
   };
 
-  /* =======================
-     GET SUB MODULES
-  ======================= */
+  /* ================= STATE ================= */
+  const [search, setSearch] = useState("");
+  
+  /* ================= REFS ================= */
+  // Prevent infinite loop: only fetch once when canRead becomes true
+  const fetchedOnce = useRef(false);
+  const lastCanRead = useRef(rbac.canRead);
+
+  /* ================= LOAD ================= */
   useEffect(() => {
+    // ❌ Don't fetch if no read permission
+    if (!rbac.canRead) {
+      fetchedOnce.current = false; // Reset when permission is lost
+      return;
+    }
+
+    // ❌ Don't fetch if already fetched (prevent infinite loop)
+    if (fetchedOnce.current) {
+      // Only reset if canRead changed from false to true
+      if (!lastCanRead.current && rbac.canRead) {
+        fetchedOnce.current = false; // Allow refetch if permission was regained
+      } else {
+        return;
+      }
+    }
+
+    // Track current canRead state
+    lastCanRead.current = rbac.canRead;
+
+    // Mark as fetched to prevent duplicate calls
+    fetchedOnce.current = true;
+
     fetchSubModules();
-  }, []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [rbac.canRead]);
 
   const fetchSubModules = async () => {
     try {
       const res = await getSubModules();
-
       const formatted = res.data.SubModules.map(sm => ({
         id: sm.SubModuleID,
         parentId: sm.ModuleID,
@@ -51,32 +92,38 @@ export default function SubModulesSettings({
         editing: false,
         isNew: false,
       }));
-
       setSubModules(formatted);
-    } catch (err) {
-      console.error("Load sub modules failed", err);
+    } catch (error) {
+      // Handle 403 specifically - don't show error toast, just log warning
+      if (error.response?.status === 403) {
+        console.warn("⛔ 403 Forbidden - No backend permission for /users/subModules");
+        // Don't setState here to prevent re-render loop
+        // Don't show toast to avoid spam
+        return;
+      }
+      
+      // For other errors, show toast
+      toast.error("Failed to load sub modules");
     }
   };
 
-  /* =======================
-     ADD SUB MODULE (UI)
-  ======================= */
+  /* ================= ADD ================= */
   const addSubModule = () => {
+    if (!rbac.canPerformCreate) return;
+
     setSubModules(prev => [
-      ...prev,
       {
-        id: Date.now(), // مؤقت
+        id: Date.now(),
         parentId: "",
         name: { ar: "", en: "" },
         editing: true,
         isNew: true,
       },
+      ...prev,
     ]);
   };
 
-  /* =======================
-     UPDATE FIELD
-  ======================= */
+  /* ================= UPDATE HELPERS ================= */
   const updateField = (id, field, value) => {
     setSubModules(prev =>
       prev.map(s =>
@@ -85,25 +132,29 @@ export default function SubModulesSettings({
     );
   };
 
-  const updateName = (id, langKey, value) => {
+  const updateName = (id, key, value) => {
     setSubModules(prev =>
       prev.map(s =>
         s.id === id
-          ? { ...s, name: { ...s.name, [langKey]: value } }
+          ? { ...s, name: { ...s.name, [key]: value } }
           : s
       )
     );
   };
 
-  /* =======================
-     SAVE SUB MODULE
-  ======================= */
-  const saveSubModule = async (id) => {
+  /* ================= SAVE ================= */
+  const saveSubModule = async id => {
+    if (!rbac.canPerformEdit) return;
+
     const sm = subModules.find(s => s.id === id);
     if (!sm) return;
 
+    if (!sm.parentId || !sm.name.ar.trim() || !sm.name.en.trim()) {
+      toast.warning("Please fill all fields");
+      return;
+    }
+
     try {
-      // 🟢 ADD
       if (sm.isNew) {
         const res = await addSubModules([
           {
@@ -128,14 +179,8 @@ export default function SubModulesSettings({
           )
         );
 
-        toast.success(
-          lang === "ar"
-            ? "تم إضافة الوحدة الفرعية بنجاح"
-            : "Sub module added successfully"
-        );
-      }
-      // 🔵 UPDATE
-      else {
+        toast.success("Sub module added successfully");
+      } else {
         await updateSubModules([
           {
             SubModuleID: sm.id,
@@ -150,93 +195,15 @@ export default function SubModulesSettings({
           )
         );
 
-        toast.success(
-          lang === "ar"
-            ? "تم تعديل الوحدة الفرعية بنجاح"
-            : "Sub module updated successfully"
-        );
+        toast.success("Sub module updated successfully");
       }
-    } catch (err) {
-      const msg =
-        err?.response?.data?.error ||
-        err?.response?.data?.message ||
-        (lang === "ar"
-          ? "فشل حفظ الوحدة الفرعية"
-          : "Failed to save sub module");
-
-      toast.error(msg);
+    } catch {
+      toast.error("Save failed");
     }
   };
 
-  /* =======================
-     DELETE SUB MODULE
-  ======================= */
-  const deleteSubModule = (id) => {
-    toast.warn(
-      ({ closeToast }) => (
-        <div className="space-y-2">
-          <p className="text-sm">
-            {lang === "ar"
-              ? "هل أنت متأكد من حذف هذه الوحدة الفرعية؟"
-              : "Are you sure you want to delete this sub module?"}
-          </p>
-
-          <div className="flex justify-end gap-2">
-            <button
-              onClick={async () => {
-                closeToast();
-
-                try {
-                  await deleteSubModules([id]);
-
-                  setSubModules(prev =>
-                    prev.filter(s => s.id !== id)
-                  );
-
-                  toast.success(
-                    lang === "ar"
-                      ? "تم حذف الوحدة الفرعية بنجاح"
-                      : "Sub module deleted successfully"
-                  );
-                } catch (err) {
-                  const serverMessage =
-                    err?.response?.data?.error ||
-                    err?.response?.data?.message;
-
-                  toast.error(
-                    serverMessage ||
-                      (lang === "ar"
-                        ? "حدث خطأ أثناء حذف الوحدة الفرعية"
-                        : "An error occurred while deleting the sub module")
-                  );
-                }
-              }}
-              className="px-3 py-1 text-xs rounded bg-danger text-white"
-            >
-              {lang === "ar" ? "حذف" : "Delete"}
-            </button>
-
-            <button
-              onClick={closeToast}
-              className="px-3 py-1 text-xs rounded bg-gray-200 text-gray-700"
-            >
-              {lang === "ar" ? "إلغاء" : "Cancel"}
-            </button>
-          </div>
-        </div>
-      ),
-      {
-        autoClose: false,
-        closeOnClick: false,
-        draggable: false,
-      }
-    );
-  };
-
-  /* =======================
-     CANCEL EDIT
-  ======================= */
-  const cancelEdit = (id) => {
+  /* ================= CANCEL ================= */
+  const cancelEdit = id => {
     setSubModules(prev =>
       prev
         .filter(s => !(s.id === id && s.isNew))
@@ -246,29 +213,134 @@ export default function SubModulesSettings({
     );
   };
 
-  /* =======================
-     UI (UNCHANGED)
-  ======================= */
+  /* ================= DELETE ================= */
+  const deleteSubModule = id => {
+    if (!rbac.canPerformDelete) return;
+
+    toast.warn(
+      ({ closeToast }) => (
+        <div className="space-y-3">
+          <p className="text-sm">
+            {lang === "ar"
+              ? "هل أنت متأكد من الحذف؟"
+              : "Confirm delete?"}
+          </p>
+          <div className="flex justify-end gap-2">
+            <button
+              onClick={async () => {
+                closeToast();
+                try {
+                  await deleteSubModules([id]);
+                  setSubModules(prev =>
+                    prev.filter(s => s.id !== id)
+                  );
+                  toast.success("Deleted successfully");
+                } catch {
+                  toast.error("Delete failed");
+                }
+              }}
+              className="px-3 py-1 text-xs rounded bg-danger text-white"
+            >
+              {lang === "ar" ? "حذف" : "Delete"}
+            </button>
+            <button
+              onClick={closeToast}
+              className="px-3 py-1 text-xs rounded bg-gray-200"
+            >
+              {lang === "ar" ? "إلغاء" : "Cancel"}
+            </button>
+          </div>
+        </div>
+      ),
+      { autoClose: false }
+    );
+  };
+
+  /* ================= FILTER ================= */
+  const filtered = useMemo(() => {
+    if (!search.trim()) return subModules;
+    return subModules.filter(sm => {
+      const moduleName =
+        modules.find(m => m.id === sm.parentId)?.name[lang] || "";
+      return (
+        sm.name[lang]
+          .toLowerCase()
+          .includes(search.toLowerCase()) ||
+        moduleName
+          .toLowerCase()
+          .includes(search.toLowerCase())
+      );
+    });
+  }, [search, subModules, modules, lang]);
+
+  /* ================= LOADING GUARD ================= */
+  if (loading) {
+    return (
+      <div className="bg-white rounded-xl border border-grayMedium p-6 text-center">
+        <p className="text-sm text-grayTextLight">
+          {lang === "ar" ? "جاري تحميل الصلاحيات..." : "Loading permissions..."}
+        </p>
+      </div>
+    );
+  }
+
+  /* ================= PERMISSION GUARD ================= */
+  if (!rbac.canRead) {
+    return (
+      <div className="bg-white rounded-xl border border-grayMedium p-6 text-center">
+        <p className="text-sm text-grayTextLight">
+          {lang === "ar" ? "ليس لديك صلاحية لعرض هذه الصفحة" : "You don't have permission to view this page"}
+        </p>
+      </div>
+    );
+  }
+
+  /* ================= UI ================= */
   return (
     <div className="bg-white rounded-xl border border-grayMedium p-6">
-      <div className="flex items-center justify-between mb-6">
+      {/* HEADER */}
+      <div className="flex justify-between items-center mb-6">
         <div>
           <h2 className="text-lg font-semibold">{t.title}</h2>
           <p className="text-sm text-grayTextLight">{t.desc}</p>
         </div>
 
-        <button
-          onClick={addSubModule}
-          className="px-4 py-2 text-sm rounded-lg bg-primary text-white"
-        >
-          {t.add}
-        </button>
+        <div className="flex gap-3">
+          {/* SEARCH */}
+          <div className="relative">
+            <HiOutlineMagnifyingGlass className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+            <input
+              value={search}
+              onChange={e => setSearch(e.target.value)}
+              placeholder={t.search}
+              className="pl-10 pr-4 py-2 text-sm rounded-lg border border-gray-300 focus:outline-none focus:border-primary"
+            />
+          </div>
+
+          {rbac.showCreateButton && (
+            <button
+              onClick={addSubModule}
+              className="px-4 py-2 text-sm rounded-lg bg-primary text-white hover:bg-primaryDark transition-colors"
+            >
+              {t.add}
+            </button>
+          )}
+        </div>
       </div>
 
-      <div className="overflow-hidden rounded-lg border border-grayMedium">
+      {/* TABLE */}
+      <div className="rounded-xl border border-grayMedium overflow-hidden">
         <table className="w-full text-sm">
+          <thead className="bg-grayLight">
+            <tr>
+              <th className="px-4 py-3 text-left">Sub Module</th>
+              <th className="px-4 py-3 text-left">Module</th>
+              <th className="px-4 py-3 text-right">Actions</th>
+            </tr>
+          </thead>
+
           <tbody className="divide-y divide-grayMedium">
-            {subModules.map(sm => {
+            {filtered.map(sm => {
               const canSave =
                 sm.parentId &&
                 sm.name.ar.trim() &&
@@ -276,42 +348,18 @@ export default function SubModulesSettings({
 
               return (
                 <tr key={sm.id}>
-                  <td className="px-4 py-3 space-y-2">
+                  <td className="px-4 py-3">
                     {sm.editing ? (
                       <>
-                        <select
-                          value={sm.parentId}
-                          onChange={e =>
-                            updateField(
-                              sm.id,
-                              "parentId",
-                              e.target.value
-                            )
-                          }
-                          className="w-full px-3 py-2 border rounded-md"
-                        >
-                          <option value="">
-                            {lang === "ar"
-                              ? "اختر الوحدة"
-                              : "Select Module"}
-                          </option>
-                          {modules.map(m => (
-                            <option key={m.id} value={m.id}>
-                              {m.name[lang]}
-                            </option>
-                          ))}
-                        </select>
-
                         <input
                           dir="rtl"
-                          placeholder="اسم الوحدة الفرعية بالعربي"
+                          placeholder="اسم الوحدة بالعربي"
                           value={sm.name.ar}
                           onChange={e =>
                             updateName(sm.id, "ar", e.target.value)
                           }
-                          className="w-full px-3 py-2 border rounded-md"
+                          className="w-full mb-2 px-3 py-2 border rounded-md"
                         />
-
                         <input
                           dir="ltr"
                           placeholder="Sub module name in English"
@@ -323,25 +371,52 @@ export default function SubModulesSettings({
                         />
                       </>
                     ) : (
-                      <span>{sm.name[lang]}</span>
+                      sm.name[lang]
+                    )}
+                  </td>
+
+                  <td className="px-4 py-3">
+                    {sm.editing ? (
+                      <select
+                        value={sm.parentId}
+                        onChange={e =>
+                          updateField(
+                            sm.id,
+                            "parentId",
+                            e.target.value
+                          )
+                        }
+                        className="w-full px-3 py-2 border rounded-md"
+                      >
+                        <option value="">Select Module</option>
+                        {modules.map(m => (
+                          <option key={m.id} value={m.id}>
+                            {m.name[lang]}
+                          </option>
+                        ))}
+                      </select>
+                    ) : (
+                      modules.find(m => m.id === sm.parentId)
+                        ?.name[lang]
                     )}
                   </td>
 
                   <td className="px-4 py-3 text-right">
                     {sm.editing ? (
                       <div className="flex justify-end gap-2">
-                        <button
-                          disabled={!canSave}
-                          onClick={() => saveSubModule(sm.id)}
-                          className={
-                            canSave
-                              ? "text-success"
-                              : "text-gray-300"
-                          }
-                        >
-                          <IoCheckmarkDone />
-                        </button>
-
+                        {rbac.canPerformEdit && (
+                          <button
+                            disabled={!canSave}
+                            onClick={() => saveSubModule(sm.id)}
+                            className={
+                              canSave
+                                ? "text-success"
+                                : "text-gray-300"
+                            }
+                          >
+                            <IoCheckmarkDone />
+                          </button>
+                        )}
                         <button
                           onClick={() => cancelEdit(sm.id)}
                           className="text-danger"
@@ -350,29 +425,14 @@ export default function SubModulesSettings({
                         </button>
                       </div>
                     ) : (
-                      <div className="flex justify-end gap-2">
-                        <button
-                          onClick={() =>
-                            setSubModules(prev =>
-                              prev.map(s =>
-                                s.id === sm.id
-                                  ? { ...s, editing: true }
-                                  : s
-                              )
-                            )
-                          }
-                          className="text-primary"
-                        >
-                          <HiOutlinePencilSquare />
-                        </button>
-
-                        <button
-                          onClick={() => deleteSubModule(sm.id)}
-                          className="text-danger"
-                        >
-                          <IoTrashOutline />
-                        </button>
-                      </div>
+                      <ActionButtons
+                        moduleName="Admin Settings"
+                        subModuleName="System Settings"
+                        onEdit={() => updateField(sm.id, "editing", true)}
+                        onDelete={() => deleteSubModule(sm.id)}
+                        editLabel={lang === "ar" ? "تعديل" : "Edit"}
+                        deleteLabel={lang === "ar" ? "حذف" : "Delete"}
+                      />
                     )}
                   </td>
                 </tr>

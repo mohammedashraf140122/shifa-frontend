@@ -7,11 +7,75 @@ import {
   IoTrashOutline,
   IoCreateOutline,
 } from "react-icons/io5";
+import useRBAC from "../../hooks/useRBAC";
+import { useAuth } from "../../context/AuthContext";
+import { toast } from "react-toastify";
 
 export default function Alerts() {
   const { alerts, toggleAlert, deleteAlert } = useAlerts();
   const [open, setOpen] = useState(false);
   const [editingAlert, setEditingAlert] = useState(null);
+  const { loading: authLoading } = useAuth();
+
+  // RBAC permissions
+  const rbac = useRBAC("Alerts", "Alerts");
+
+  // Loading state
+  if (authLoading) {
+    return (
+      <div className="bg-white rounded-xl p-6 shadow-sm border border-gray-200 text-center">
+        <p className="text-sm text-gray-500">Loading permissions...</p>
+      </div>
+    );
+  }
+
+  // Permission guard - check if user has Read permission
+  if (!rbac.canRead) {
+    return (
+      <div className="bg-white rounded-xl p-6 shadow-sm border border-gray-200 text-center">
+        <p className="text-sm text-gray-500">
+          You don't have permission to view this page
+        </p>
+      </div>
+    );
+  }
+
+  // Handler for opening modal (Create or Edit)
+  const handleOpenModal = (alert = null) => {
+    if (alert) {
+      // Editing existing alert
+      if (!rbac.canPerformEdit) {
+        toast.error("You don't have permission to edit alerts");
+        return;
+      }
+    } else {
+      // Creating new alert
+      if (!rbac.canPerformCreate) {
+        toast.error("You don't have permission to create alerts");
+        return;
+      }
+    }
+    setEditingAlert(alert);
+    setOpen(true);
+  };
+
+  // Handler for toggle alert
+  const handleToggleAlert = (id) => {
+    if (!rbac.canPerformEdit) {
+      toast.error("You don't have permission to toggle alerts");
+      return;
+    }
+    toggleAlert(id);
+  };
+
+  // Handler for delete alert
+  const handleDeleteAlert = (id) => {
+    if (!rbac.canPerformDelete) {
+      toast.error("You don't have permission to delete alerts");
+      return;
+    }
+    deleteAlert(id);
+  };
 
   return (
     <div className="bg-white rounded-xl p-6 shadow-sm border border-gray-200">
@@ -24,15 +88,15 @@ export default function Alerts() {
           </p>
         </div>
 
-        <button
-          className="btn-primary"
-          onClick={() => {
-            setEditingAlert(null);
-            setOpen(true);
-          }}
-        >
-          + Create New Alert
-        </button>
+        {rbac.showCreateButton && (
+          <button
+            className={`btn-primary ${!rbac.canPerformCreate ? "opacity-50 cursor-not-allowed" : ""}`}
+            onClick={() => handleOpenModal(null)}
+            disabled={!rbac.canPerformCreate}
+          >
+            + Create New Alert
+          </button>
+        )}
       </div>
 
       {/* Table */}
@@ -78,35 +142,56 @@ export default function Alerts() {
 
               <div className="col-span-2 flex justify-end gap-3">
                 {/* Edit */}
-                <button
-                  onClick={() => {
-                    setEditingAlert(alert);
-                    setOpen(true);
-                  }}
-                  className="text-gray-500 hover:text-primary"
-                >
-                  <IoCreateOutline size={18} />
-                </button>
+                {rbac.showEditButton && (
+                  <button
+                    onClick={() => handleOpenModal(alert)}
+                    disabled={!rbac.canPerformEdit}
+                    className={`${
+                      rbac.canPerformEdit
+                        ? "text-gray-500 hover:text-primary cursor-pointer"
+                        : "text-gray-300 cursor-not-allowed opacity-50"
+                    }`}
+                    title={rbac.canPerformEdit ? "Edit" : "No permission to edit"}
+                  >
+                    <IoCreateOutline size={18} />
+                  </button>
+                )}
 
                 {/* Stop / Resume */}
-                <button
-                  onClick={() => toggleAlert(alert.id)}
-                  className="text-gray-500 hover:text-primary"
-                >
-                  {alert.active ? (
-                    <IoPauseOutline size={18} />
-                  ) : (
-                    <IoPlayOutline size={18} />
-                  )}
-                </button>
+                {rbac.showEditButton && (
+                  <button
+                    onClick={() => handleToggleAlert(alert.id)}
+                    disabled={!rbac.canPerformEdit}
+                    className={`${
+                      rbac.canPerformEdit
+                        ? "text-gray-500 hover:text-primary cursor-pointer"
+                        : "text-gray-300 cursor-not-allowed opacity-50"
+                    }`}
+                    title={rbac.canPerformEdit ? (alert.active ? "Pause" : "Resume") : "No permission to toggle"}
+                  >
+                    {alert.active ? (
+                      <IoPauseOutline size={18} />
+                    ) : (
+                      <IoPlayOutline size={18} />
+                    )}
+                  </button>
+                )}
 
                 {/* Delete */}
-                <button
-                  onClick={() => deleteAlert(alert.id)}
-                  className="text-gray-500 hover:text-danger"
-                >
-                  <IoTrashOutline size={18} />
-                </button>
+                {rbac.showDeleteButton && (
+                  <button
+                    onClick={() => handleDeleteAlert(alert.id)}
+                    disabled={!rbac.canPerformDelete}
+                    className={`${
+                      rbac.canPerformDelete
+                        ? "text-gray-500 hover:text-danger cursor-pointer"
+                        : "text-gray-300 cursor-not-allowed opacity-50"
+                    }`}
+                    title={rbac.canPerformDelete ? "Delete" : "No permission to delete"}
+                  >
+                    <IoTrashOutline size={18} />
+                  </button>
+                )}
               </div>
             </div>
           ))

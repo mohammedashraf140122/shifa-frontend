@@ -1,36 +1,27 @@
-import {
-  IoHomeOutline,
-  IoBarChartOutline,
-  IoSettingsOutline,
-  IoBriefcaseOutline,
-  IoCallOutline,
-  IoPersonOutline,
-  IoShieldCheckmarkOutline,
-  IoOptionsOutline,
-  IoChatbubblesOutline,
-  IoMailOutline,
-  IoNotificationsOutline,
-  IoDocumentTextOutline,
-  IoPeopleOutline,
-  IoCalendarOutline,
-  IoMedkitOutline,
-  IoHelpCircleOutline,
-  IoChevronDownOutline,
-  IoSettingsSharp,
-  IoWallet,
-  IoReceipt,
-  IoReader,
-} from "react-icons/io5";
-import { useState } from "react";
+import { IoChevronDownOutline } from "react-icons/io5";
+import { useState, useMemo, useEffect } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
+import { useAuth } from "../../context/AuthContext";
+import { buildMenuItems } from "../../core/utils/menuBuilder";
 import Logo from "../../assets/images/logo-en-ar.png";
 import Logo00 from "../../assets/images/logo-mini.png";
 
 export default function Sidebar({ open, lang }) {
-  const [activeItem, setActiveItem] = useState("dashboard"); // متشالش
   const [openGroup, setOpenGroup] = useState(null);
+  const [isInitialLoad, setIsInitialLoad] = useState(true);
   const navigate = useNavigate();
-  const location = useLocation(); // الجديد فقط
+  const location = useLocation();
+  const { user, permissionsMap, loading } = useAuth();
+
+  // Track when data is actually loaded (not just fetching)
+  useEffect(() => {
+    if (!loading && user) {
+      setIsInitialLoad(false);
+    } else if (loading) {
+      // Reset on new load
+      setIsInitialLoad(true);
+    }
+  }, [loading, user]);
 
   const toggleGroup = (id) => {
     setOpenGroup(prev => (prev === id ? null : id));
@@ -40,63 +31,21 @@ export default function Sidebar({ open, lang }) {
   const isChildActive = (children) =>
     children?.some(child => location.pathname === child.path);
 
-  const menuItems = [
-    { id: "dashboard", icon: IoHomeOutline, label: { ar: "لوحة التحكم", en: "Dashboard" }, path: "/dashboard" },
-    { id: "chat", icon: IoChatbubblesOutline, label: { ar: "الشات", en: "Chat" }, path: "/chat" },
-
-    {
-      id: "recruitment",
-      icon: IoBriefcaseOutline,
-      label: { ar: "التوظيف", en: "Recruitment" },
-      children: [
-        { id: "job-posting", icon: IoDocumentTextOutline, label: { ar: "إعلانات الوظائف", en: "Job Posting" }, path: "/jobposting" },
-        { id: "candidates", icon: IoPeopleOutline, label: { ar: "المرشحين", en: "Candidates" }, path: "/candidates" },
-        { id: "quick-candidate", icon: IoPersonOutline, label: { ar: "مرشح سريع", en: "Quick Candidate" }, path: "/quickcandidate" },
-        { id: "schedule", icon: IoCalendarOutline, label: { ar: "المواعيد", en: "Schedule" }, path: "/schedule" },
-        { id: "interviews", icon: IoChatbubblesOutline, label: { ar: "المقابلات", en: "Interviews" }, path: "/interviews" },
-        { id: "cv-bank", icon: IoDocumentTextOutline, label: { ar: "بنك السير الذاتية", en: "CV Bank" }, path: "/cvbank" },
-      ],
-    },
-
-{
-      id: "payroll",
-      icon: IoWallet ,
-      label: { ar: "الرواتب", en: "Payroll" },
-      children: [
-        { id: "medical-shits", icon: IoReceipt , label: { ar: "الورديات الطبية", en: "Medical Shifts" }, path: "/medicalshifts" },
-        { id: "shits", icon: IoReader , label: { ar: "الورديات", en: "Shifts" }, path: "/shifts" },
-
-      ],
-    },
-
-
-    {
-      id: "call-center",
-      icon: IoCallOutline,
-      label: { ar: "الكول سنتر", en: "Call Center" },
-      children: [
-        { id: "clinics", icon: IoMedkitOutline, label: { ar: "العيادات", en: "Clinics" }, path: "/clinics" },
-        { id: "services", icon: IoOptionsOutline, label: { ar: "الخدمات", en: "Services" }, path: "/services" },
-        { id: "doctors", icon: IoPeopleOutline, label: { ar: "الأطباء", en: "Doctors" }, path: "/doctors" },
-        { id: "faq", icon: IoHelpCircleOutline, label: { ar: "الأسئلة الشائعة", en: "FAQ" }, path: "/faq" },
-      ],
-    },
-
-    { id: "contact", icon: IoMailOutline, label: { ar: "التواصل", en: "Contact" }, path: "/contact" },
-    { id: "alerts", icon: IoNotificationsOutline, label: { ar: "التنبيهات", en: "Alerts" }, path: "/alerts" },
-
-    {
-      id: "admin-settings",
-      icon: IoSettingsOutline,
-      label: { ar: "إعدادات الأدمن", en: "Admin Settings" },
-      children: [
-        { id: "users", icon: IoPersonOutline, label: { ar: "المستخدمين", en: "Users" }, path: "/users" },
-        { id: "roles", icon: IoShieldCheckmarkOutline, label: { ar: "الأدوار", en: "Roles" }, path: "/roles" },
-        { id: "permissions", icon: IoOptionsOutline, label: { ar: "الصلاحيات", en: "Permissions" }, path: "/permissions" },
-        { id: "system-settings", icon: IoSettingsSharp , label: { ar: "صلاحيات النظام", en: "system settings" }, path: "/systemsettings" },
-      ],
-    },
-  ];
+  // بناء menuItems ديناميكياً من modules المستخدم
+  const menuItems = useMemo(() => {
+    // During initial load, return empty to show loading
+    if (loading && isInitialLoad) return [];
+    
+    // If no user after loading completes, return empty
+    if (!loading && !user) return [];
+    
+    // If user exists but no modules, return empty
+    if (!user?.modules || !Array.isArray(user.modules) || user.modules.length === 0) {
+      return [];
+    }
+    
+    return buildMenuItems(user.modules, lang, permissionsMap, user.isAdmin);
+  }, [user, loading, lang, permissionsMap, user?.isAdmin, isInitialLoad]);
 
   return (
     <aside
@@ -144,78 +93,102 @@ export default function Sidebar({ open, lang }) {
       </div>
 
       {/* Menu */}
-      <nav className="flex-1 overflow-y-auto py-3 px-1">
-        <div className="space-y-1.5">
-          {menuItems.map(item => {
-            const Icon = item.icon;
+      <nav className="flex-1 overflow-y-auto py-3 px-1 scrollbar-thin scrollbar-thumb-grayMedium scrollbar-track-transparent">
+        {loading && isInitialLoad ? (
+          <div className="flex items-center justify-center h-full">
+            <div className="text-center px-4">
+              <div className="inline-block animate-spin rounded-full h-5 w-5 border-2 border-grayMedium border-t-primary mb-2"></div>
+              <p className="text-xs text-grayTextLight">
+                {lang === "ar" ? "جاري التحميل..." : "Loading..."}
+              </p>
+            </div>
+          </div>
+        ) : menuItems.length === 0 ? (
+          <div className="flex items-center justify-center h-full">
+            <div className="text-center px-4">
+              <p className="text-xs text-grayTextLight">
+                {lang === "ar" ? "لا توجد عناصر قائمة" : "No menu items"}
+              </p>
+            </div>
+          </div>
+        ) : (
+          <div className="space-y-1.5">
+            {menuItems.map(item => {
+              const Icon = item.icon;
 
-            const childActive = isChildActive(item.children);
-            const isActive = isPathActive(item.path) || childActive;
+              const childActive = isChildActive(item.children);
+              const isActive = isPathActive(item.path) || childActive;
 
-            const isGroupOpen =
-              item.children &&
-              open &&
-              (openGroup === item.id || childActive);
+              const isGroupOpen =
+                item.children &&
+                open &&
+                (openGroup === item.id || childActive);
 
-            return (
-              <div key={item.id}>
-                <button
-                  onClick={() => {
-                    if (!item.children) {
-                      setActiveItem(item.id);
-                      setOpenGroup(null);
-                      item.path && navigate(item.path);
-                    } else {
-                      toggleGroup(item.id);
-                    }
-                  }}
-                  className={`w-full flex items-center
-                  ${open ? "justify-between px-1.5 py-2" : "justify-center px-0 py-1.5"}
-                  rounded-xl transition-all
-                  ${isActive
-                    ? "bg-primary text-white"
-                    : "text-grayText hover:bg-primaryLight"}`}
-                >
-                  <div className="flex items-center gap-1.5">
-                    <Icon className="text-lg" />
-                    {open && <span className="text-xs">{item.label[lang]}</span>}
-                  </div>
+              return (
+                <div key={item.id}>
+                  <button
+                    onClick={() => {
+                      if (!item.children) {
+                        setOpenGroup(null);
+                        item.path && navigate(item.path);
+                      } else {
+                        toggleGroup(item.id);
+                      }
+                    }}
+                    className={`w-full flex items-center
+                    ${open ? "justify-between px-2 py-2.5" : "justify-center px-0 py-2"}
+                    rounded-xl transition-all duration-200
+                    ${isActive
+                      ? "bg-primary text-white shadow-md shadow-primary/20"
+                      : "text-grayText dark:text-gray-300 hover:bg-primaryLight dark:hover:bg-gray-700"}`}
+                  >
+                    <div className="flex items-center gap-2">
+                      <Icon className={`text-lg ${isActive ? "text-white" : ""}`} />
+                      {open && (
+                        <span className="text-xs font-medium">
+                          {item.label[lang]}
+                        </span>
+                      )}
+                    </div>
 
-                  {item.children && open && (
-                    <IoChevronDownOutline
-                      className={`text-sm transition-transform ${isGroupOpen ? "rotate-180" : ""}`}
-                    />
+                    {item.children && open && (
+                      <IoChevronDownOutline
+                        className={`text-sm transition-transform duration-200 ${
+                          isGroupOpen ? "rotate-180" : ""
+                        } ${isActive ? "text-white" : "text-grayTextLight"}`}
+                      />
+                    )}
+                  </button>
+
+                  {item.children && open && isGroupOpen && (
+                    <div className="ml-3 pl-2 border-l-2 border-primary/30 dark:border-primary/20 mt-1.5 space-y-1 animate-slide-down">
+                      {item.children.map(sub => {
+                        const SubIcon = sub.icon;
+                        const isSubActive = isPathActive(sub.path);
+                        return (
+                          <button
+                            key={sub.id}
+                            onClick={() => {
+                              setOpenGroup(item.id);
+                              sub.path && navigate(sub.path);
+                            }}
+                            className={`w-full flex items-center gap-2 px-2 py-2 rounded-lg text-[11px] transition-all duration-200
+                            ${isSubActive
+                              ? "bg-primary/20 text-primary dark:text-primary font-semibold shadow-sm"
+                              : "text-grayTextLight dark:text-gray-400 hover:bg-primaryLight/50 dark:hover:bg-gray-700/50"}`}
+                          >
+                            <SubIcon className="text-sm" />
+                            {sub.label[lang]}
+                          </button>
+                        );
+                      })}
+                    </div>
                   )}
-                </button>
-
-                {item.children && open && isGroupOpen && (
-                  <div className="ml-2 pl-1.5 border-l border-primary/20 mt-1 space-y-0.5">
-                    {item.children.map(sub => {
-                      const SubIcon = sub.icon;
-                      return (
-                        <button
-                          key={sub.id}
-                          onClick={() => {
-                            setActiveItem(sub.id);
-                            setOpenGroup(item.id);
-                            sub.path && navigate(sub.path);
-                          }}
-                          className={`w-full flex items-center gap-1 px-1.5 py-1.5 rounded-lg text-[11px]
-                          ${isPathActive(sub.path)
-                            ? "bg-primary/15 text-primary font-semibold"
-                            : "text-grayTextLight hover:bg-primaryLight/50"}`}
-                        >
-                          <SubIcon className="text-base" />
-                          {sub.label[lang]}
-                        </button>
-                      );
-                    })}
-                  </div>
-                )}
-              </div>
-            );
-          })}
-        </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
       </nav>
 
       {open && (

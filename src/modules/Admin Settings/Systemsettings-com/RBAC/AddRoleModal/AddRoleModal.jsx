@@ -1,303 +1,455 @@
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { HiOutlineXMark } from "react-icons/hi2";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { toast } from "react-toastify";
 import {
-  HiOutlineXMark,
-  HiOutlineArrowRight,
-  HiOutlineArrowLeft,
-} from "react-icons/hi2";
+  getModules,
+  getSubModules,
+  getPermissions,
+  getRolePermissions,
+  addRoles,
+  updateRoles,
+  addRolePermissions,
+  deleteRolePermissions,
+} from "../../../../../core/api/axios";
+import { devError } from "../../../../../core/utils/devLog";
+import { handleApiError } from "../../../../../core/utils/apiErrorHandler";
+import Step1RoleName from "./Step1RoleName";
+import Step2SelectModules from "./Step2SelectModules";
+import Step3Permissions from "./Step3Permissions";
 
-export default function AddRoleModal({ open, onClose, onSave }) {
-  if (!open) return null;
+// Query keys
+const MODULES_QUERY_KEY = ["modules"];
+const SUB_MODULES_QUERY_KEY = ["subModules"];
+const PERMISSIONS_QUERY_KEY = ["permissions"];
+const ROLE_PERMISSIONS_QUERY_KEY = (roleId) => ["rolePermissions", roleId];
 
+export default function AddRoleModal({ open, onClose, role }) {
+  const queryClient = useQueryClient();
+  
   /* ================= STATE ================= */
   const [step, setStep] = useState(1);
   const [roleName, setRoleName] = useState("");
-
-  /* ================= STATIC DATA ================= */
-  const modules = ["HR", "Finance", "Appointments", "Reports"];
-
-  const subModulesMap = {
-    HR: ["Employees", "Attendance"],
-    Finance: ["Invoices", "Payments"],
-    Appointments: ["Doctors", "Schedule"],
-    Reports: ["Daily", "Monthly"],
-  };
-
-  const permissionTypes = ["View", "Edit", "Admin"];
-
-  /* ================= STEP 2 ================= */
   const [selectedModules, setSelectedModules] = useState([]);
-
-  /* ================= STEP 3 ================= */
   const [permissions, setPermissions] = useState([]);
+  const [originalPermissions, setOriginalPermissions] = useState([]);
   const [current, setCurrent] = useState({
     module: "",
     sub: "",
     permission: "",
   });
 
-  /* ================= HELPERS ================= */
-
-  // Step 2
-  const addModule = m =>
-    setSelectedModules(prev => [...prev, m]);
-
-  const removeModule = m =>
-    setSelectedModules(prev => prev.filter(x => x !== m));
-
-  // Step 3
-  const addPermission = () => {
-    if (!current.module || !current.sub || !current.permission) return;
-
-    setPermissions(prev => [...prev, current]);
+  /* ================= RESET ================= */
+  const reset = () => {
+    setStep(1);
+    setRoleName("");
+    setSelectedModules([]);
+    setPermissions([]);
+    setOriginalPermissions([]);
     setCurrent({ module: "", sub: "", permission: "" });
   };
 
-  const removePermission = index => {
-    setPermissions(prev => prev.filter((_, i) => i !== index));
+  /* ================= OPEN ================= */
+  useEffect(() => {
+    if (!open) return;
+    reset();
+    if (role) setRoleName(role.name);
+  }, [open, role]);
+
+  /* ================= QUERIES ================= */
+  // Fetch modules (step 2)
+  const {
+    data: modulesData,
+    isLoading: modulesLoading,
+    error: modulesError,
+  } = useQuery({
+    queryKey: MODULES_QUERY_KEY,
+    queryFn: async () => {
+      const res = await getModules();
+      return res.data.Modules || [];
+    },
+    enabled: open && step === 2,
+    staleTime: 5 * 60 * 1000,
+  });
+
+  // Show error toast for modules
+  useEffect(() => {
+    if (modulesError) {
+      const status = modulesError?.response?.status;
+      let msg;
+      
+      if (status === 502 || status === 503) {
+        msg = modulesError?.response?.data?.message || "Service is temporarily unavailable. Please try again later.";
+      } else if (status === 500) {
+        msg = modulesError?.response?.data?.message || "Server error. Please try again later.";
+      } else {
+        msg = modulesError?.response?.data?.message || modulesError?.message || "Failed to load modules";
+      }
+      
+      toast.error(msg);
+    }
+  }, [modulesError]);
+
+  const modules = modulesData || [];
+
+  // Fetch role permissions (step 2, if editing)
+  const {
+    data: rolePermissionsData,
+    isLoading: rolePermissionsLoading,
+    error: rolePermissionsError,
+  } = useQuery({
+    queryKey: ROLE_PERMISSIONS_QUERY_KEY(role?.id),
+    queryFn: async () => {
+      const res = await getRolePermissions(role.id);
+      return res.data.RolePermissions || [];
+    },
+    enabled: open && step === 2 && !!role?.id,
+    staleTime: 5 * 60 * 1000,
+  });
+
+  // Show error toast for role permissions
+  useEffect(() => {
+    if (rolePermissionsError) {
+      const status = rolePermissionsError?.response?.status;
+      let msg;
+      
+      if (status === 502 || status === 503) {
+        msg = rolePermissionsError?.response?.data?.message || "Service is temporarily unavailable. Please try again later.";
+      } else if (status === 500) {
+        msg = rolePermissionsError?.response?.data?.message || "Server error. Please try again later.";
+      } else {
+        msg = rolePermissionsError?.response?.data?.message || rolePermissionsError?.message || "Failed to load role permissions";
+      }
+      
+      toast.error(msg);
+    }
+  }, [rolePermissionsError]);
+
+  // Initialize permissions when role permissions load
+  useEffect(() => {
+    if (rolePermissionsData && role?.id && step === 2) {
+      const mapped = rolePermissionsData.map(r => ({
+        module: r.ModuleID,
+        sub: r.SubModuleID,
+        permission: r.PermissionID,
+        moduleName: r.ModuleName || r.ModuleNameAr,
+        subModuleName: r.SubModuleName || r.SubModuleNameAr,
+        permissionName: r.PermissionName,
+        rolePermissionID: r.RolePermissionID,
+      }));
+
+      setPermissions(mapped);
+      setOriginalPermissions(mapped);
+
+      // Extract unique modules
+      const uniqueModules = [...new Set(mapped.map(p => p.module))];
+      setSelectedModules(uniqueModules);
+    }
+  }, [rolePermissionsData, role?.id, step]);
+
+  // Fetch sub modules and permissions (step 3)
+  const {
+    data: subModulesData,
+    isLoading: subModulesLoading,
+    error: subModulesError,
+  } = useQuery({
+    queryKey: SUB_MODULES_QUERY_KEY,
+    queryFn: async () => {
+      const res = await getSubModules();
+      return res.data.SubModules || [];
+    },
+    enabled: open && step === 3 && selectedModules.length > 0,
+    staleTime: 5 * 60 * 1000,
+  });
+
+  const allSubModules = subModulesData || [];
+
+  const {
+    data: permissionsData,
+    isLoading: permissionsLoading,
+    error: permissionsError,
+  } = useQuery({
+    queryKey: PERMISSIONS_QUERY_KEY,
+    queryFn: async () => {
+      const res = await getPermissions();
+      return res.data.Permissions || [];
+    },
+    enabled: open && step === 3 && selectedModules.length > 0,
+    staleTime: 0, // Always refetch to get latest permissions
+    refetchOnMount: true, // Refetch when modal opens
+  });
+
+  // Show error toasts for sub modules and permissions
+  useEffect(() => {
+    if (subModulesError) {
+      const status = subModulesError?.response?.status;
+      let msg;
+      
+      if (status === 502 || status === 503) {
+        msg = subModulesError?.response?.data?.message || "Service is temporarily unavailable. Please try again later.";
+      } else if (status === 500) {
+        msg = subModulesError?.response?.data?.message || "Server error. Please try again later.";
+      } else {
+        msg = subModulesError?.response?.data?.message || subModulesError?.message || "Failed to load sub modules";
+      }
+      
+      toast.error(msg);
+    }
+  }, [subModulesError]);
+
+  useEffect(() => {
+    if (permissionsError) {
+      const status = permissionsError?.response?.status;
+      let msg;
+      
+      if (status === 502 || status === 503) {
+        msg = permissionsError?.response?.data?.message || "Service is temporarily unavailable. Please try again later.";
+      } else if (status === 500) {
+        msg = permissionsError?.response?.data?.message || "Server error. Please try again later.";
+      } else {
+        msg = permissionsError?.response?.data?.message || permissionsError?.message || "Failed to load permissions";
+      }
+      
+      toast.error(msg);
+    }
+  }, [permissionsError]);
+
+  const permissionsList = permissionsData || [];
+
+  // Loading state for step 2
+  const loadingStep2 = modulesLoading || (role?.id && rolePermissionsLoading);
+
+  // Loading state for step 3
+  const loadingStep3 = subModulesLoading || permissionsLoading;
+
+  // Filtered sub modules based on selected module
+  const subModules = useMemo(() => {
+    if (!current.module) return [];
+    return allSubModules.filter(sm => sm.ModuleID === current.module);
+  }, [current.module, allSubModules]);
+
+  /* ================= MUTATIONS ================= */
+  const addRoleMutation = useMutation({
+    mutationFn: (name) => addRoles([{ RoleName: name }]),
+    onError: (error) => {
+      const msg = error?.response?.data?.message || error?.message || "Failed to add role";
+      toast.error(msg);
+    },
+  });
+
+  const updateRoleMutation = useMutation({
+    mutationFn: ({ roleId, name }) =>
+      updateRoles([{ RoleID: roleId, NewName: name }]),
+    onError: (error) => {
+      const msg = error?.response?.data?.message || error?.message || "Failed to update role";
+      toast.error(msg);
+    },
+  });
+
+  const addRolePermissionsMutation = useMutation({
+    mutationFn: (rolePermissions) => addRolePermissions(rolePermissions),
+    onError: (error) => {
+      const msg = error?.response?.data?.message || error?.message || "Failed to add permissions";
+      toast.error(msg);
+    },
+  });
+
+  const deleteRolePermissionsMutation = useMutation({
+    mutationFn: (ids) => deleteRolePermissions(ids),
+    onError: (error) => {
+      const msg = error?.response?.data?.message || error?.message || "Failed to delete permissions";
+      toast.error(msg);
+    },
+  });
+
+  /* ================= HELPERS ================= */
+  const addPermission = (permissionData) => {
+    // Check if permission already exists
+    const exists = permissions.some(
+      p =>
+        p.module === permissionData.module &&
+        p.sub === permissionData.sub &&
+        p.permission === permissionData.permission
+    );
+
+    if (exists) return;
+
+    setPermissions(prev => [
+      ...prev,
+      permissionData,
+    ]);
   };
 
-  // Save
-  const handleSave = () => {
-    onSave({
-      roleName,
-      modules: selectedModules,
-      permissions,
-    });
-    onClose();
+  const removePermission = index =>
+    setPermissions(p => p.filter((_, i) => i !== index));
+
+  /* ================= SAVE ================= */
+  const handleSave = async () => {
+    let roleId = role?.id;
+
+    try {
+      // Add or update role
+      if (!role) {
+        const res = await addRoleMutation.mutateAsync(roleName);
+        roleId = res.data?.addedRoles?.[0]?.RoleID;
+      } else {
+        await updateRoleMutation.mutateAsync({
+          roleId: role.id,
+          name: roleName,
+        });
+      }
+
+      // Delete old permissions if editing
+      if (originalPermissions.length) {
+        const ids = originalPermissions
+          .map(p => p.rolePermissionID)
+          .filter(Boolean);
+
+        if (ids.length) {
+          await deleteRolePermissionsMutation.mutateAsync(ids);
+        }
+      }
+
+      // Add new permissions
+      if (permissions.length) {
+        await addRolePermissionsMutation.mutateAsync(
+          permissions.map(p => ({
+            RoleID: roleId,
+            PermissionID: p.permission,
+            SubModuleID: p.sub,
+          }))
+        );
+      }
+
+      // Invalidate queries
+      queryClient.invalidateQueries({ queryKey: ["roles"] });
+      if (roleId) {
+        queryClient.invalidateQueries({ queryKey: ROLE_PERMISSIONS_QUERY_KEY(roleId) });
+      }
+
+      toast.success(role ? "Role updated successfully" : "Role created successfully");
+      onClose();
+    } catch (error) {
+      devError("Error saving role:", error);
+      handleApiError(error, {
+        customMessages: {
+          500: "Failed to save role. Please try again later.",
+        },
+      });
+    }
   };
 
-  /* ================= RENDER ================= */
+
+  if (!open) return null;
+
+  /* ================= UI ================= */
   return (
-    <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center">
-      <div className="bg-white w-full max-w-3xl rounded-2xl px-8 py-6 relative shadow-xl">
+    <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4">
+      <div className="bg-white dark:bg-gray-800 w-full max-w-lg rounded-xl p-5 relative shadow-xl">
 
         {/* Close */}
         <button
           onClick={onClose}
-          className="absolute top-4 right-4 text-gray-400 hover:text-gray-600"
+          className="absolute top-3 right-3 p-1.5 rounded-lg hover:bg-grayLight dark:hover:bg-gray-700 text-grayTextLight dark:text-gray-400 transition-colors"
         >
-          <HiOutlineXMark className="text-2xl" />
+          <HiOutlineXMark className="text-lg" />
         </button>
 
-        {/* ======== STAGES HEADER ======== */}
-        <div className="flex bg-grayLight rounded-lg overflow-hidden mb-8">
-          {[
-            { id: 1, label: "Role Info" },
-            { id: 2, label: "Select Modules" },
-            { id: 3, label: "Assign Permissions" },
-          ].map(s => (
-            <div
-              key={s.id}
-              className={`flex-1 text-center py-3 text-sm font-semibold
-              ${
-                step === s.id
-                  ? "bg-primary text-white shadow"
-                  : "text-grayTextLight"
-              }`}
-            >
-              {s.label}
-            </div>
-          ))}
-        </div>
-
-        {/* ================= STEP 1 ================= */}
+        {/* STEP 1: Role Name */}
         {step === 1 && (
-          <>
-            <h3 className="text-base font-semibold mb-3">
-              Role Name
-            </h3>
-
-            <input
-              value={roleName}
-              onChange={e => setRoleName(e.target.value)}
-              placeholder="Enter role name"
-              className="w-full px-4 py-2.5 rounded-lg border border-grayMedium
-              focus:outline-none focus:border-primary"
-            />
-          </>
+          <Step1RoleName
+            roleName={roleName}
+            setRoleName={setRoleName}
+            role={role}
+          />
         )}
 
-        {/* ================= STEP 2 ================= */}
+        {/* STEP 2: Modules */}
         {step === 2 && (
-          <>
-            <h3 className="text-base font-semibold mb-5">
-              Select Modules
-            </h3>
-
-            <div className="grid grid-cols-2 gap-6">
-              {/* Available */}
-              <div>
-                <p className="text-sm text-grayTextLight mb-2">
-                  Available Modules
-                </p>
-
-                <div className="border border-grayMedium rounded-lg p-2 space-y-1">
-                  {modules
-                    .filter(m => !selectedModules.includes(m))
-                    .map(m => (
-                      <button
-                        key={m}
-                        onClick={() => addModule(m)}
-                        className="w-full flex justify-between items-center
-                        px-3 py-2 text-sm rounded-md hover:bg-grayLight"
-                      >
-                        {m}
-                        <HiOutlineArrowRight />
-                      </button>
-                    ))}
-                </div>
-              </div>
-
-              {/* Selected */}
-              <div>
-                <p className="text-sm text-grayTextLight mb-2">
-                  Selected Modules
-                </p>
-
-                <div className="border border-grayMedium rounded-lg p-2 space-y-1">
-                  {selectedModules.map(m => (
-                    <button
-                      key={m}
-                      onClick={() => removeModule(m)}
-                      className="w-full flex justify-between items-center
-                      px-3 py-2 text-sm rounded-md hover:bg-grayLight"
-                    >
-                      {m}
-                      <HiOutlineArrowLeft />
-                    </button>
-                  ))}
-                </div>
-              </div>
-            </div>
-          </>
+          <Step2SelectModules
+            modules={modules}
+            selectedModules={selectedModules}
+            setSelectedModules={setSelectedModules}
+            setPermissions={setPermissions}
+            loading={loadingStep2}
+          />
         )}
 
-        {/* ================= STEP 3 ================= */}
+        {/* STEP 3: Sub Modules & Permissions */}
         {step === 3 && (
-          <>
-            <h3 className="text-base font-semibold mb-4">
-              Assign Permissions
-            </h3>
-
-            {/* Row: selects + add */}
-            <div className="grid grid-cols-4 gap-4 items-center mb-4">
-              <select
-                value={current.module}
-                onChange={e =>
-                  setCurrent({
-                    ...current,
-                    module: e.target.value,
-                    sub: "",
-                  })
-                }
-                className="px-3 py-2 rounded-lg border border-grayMedium"
-              >
-                <option value="">Module</option>
-                {selectedModules.map(m => (
-                  <option key={m}>{m}</option>
-                ))}
-              </select>
-
-              <select
-                value={current.sub}
-                onChange={e =>
-                  setCurrent({ ...current, sub: e.target.value })
-                }
-                className="px-3 py-2 rounded-lg border border-grayMedium"
-              >
-                <option value="">Sub Module</option>
-                {(subModulesMap[current.module] || []).map(sm => (
-                  <option key={sm}>{sm}</option>
-                ))}
-              </select>
-
-              <select
-                value={current.permission}
-                onChange={e =>
-                  setCurrent({
-                    ...current,
-                    permission: e.target.value,
-                  })
-                }
-                className="px-3 py-2 rounded-lg border border-grayMedium"
-              >
-                <option value="">Permission</option>
-                {permissionTypes.map(p => (
-                  <option key={p}>{p}</option>
-                ))}
-              </select>
-
-              <button
-                onClick={addPermission}
-                className="px-4 py-2 rounded-lg border border-primary
-                text-primary text-sm font-medium
-                hover:bg-primary hover:text-white transition"
-              >
-                + Add
-              </button>
-            </div>
-
-            {/* Preview */}
-            <div className="space-y-2 text-sm">
-              {permissions.map((p, i) => (
-                <div
-                  key={i}
-                  className="flex justify-between items-center
-                  border border-grayMedium rounded-lg px-4 py-3"
-                >
-                  <span>
-                    {p.module} / {p.sub} →{" "}
-                    <b>{p.permission}</b>
-                  </span>
-
-                  <button
-                    onClick={() => removePermission(i)}
-                    className="text-danger hover:text-red-600"
-                  >
-                    🗑
-                  </button>
-                </div>
-              ))}
-            </div>
-          </>
+          <Step3Permissions
+            modules={modules}
+            selectedModules={selectedModules}
+            subModules={subModules}
+            permissionsList={permissionsList}
+            permissions={permissions}
+            current={current}
+            setCurrent={setCurrent}
+            addPermission={addPermission}
+            removePermission={removePermission}
+            loading={loadingStep3}
+          />
         )}
 
-        {/* ================= FOOTER ================= */}
-        <div className="flex justify-between items-center mt-10">
-          {step === 1 ? (
-            <button
-              onClick={onClose}
-              className="px-6 py-2 rounded-lg border border-grayMedium"
-            >
-              Cancel
-            </button>
-          ) : (
-            <button
-              onClick={() => setStep(step - 1)}
-              className="px-6 py-2 rounded-lg border border-grayMedium"
-            >
-              Back
-            </button>
-          )}
+        {/* FOOTER */}
+        <div className="flex justify-between gap-3 mt-6 pt-5 border-t border-grayMedium dark:border-gray-700">
+          <button
+            onClick={() => {
+              if (step === 1) {
+                onClose();
+              } else {
+                setStep(step - 1);
+              }
+            }}
+            className="px-4 py-2 text-sm border border-grayMedium dark:border-gray-700 rounded-lg 
+              text-grayTextDark dark:text-gray-300 hover:bg-grayLight dark:hover:bg-gray-700 
+              transition-colors font-medium"
+          >
+            Back
+          </button>
 
-          {step < 3 ? (
+          {step === 1 && (
             <button
-              disabled={step === 1 && roleName.trim() === ""}
-              onClick={() => setStep(step + 1)}
-              className={`px-6 py-2 rounded-lg text-white ${
-                step === 1 && roleName.trim() === ""
-                  ? "bg-gray-300 cursor-not-allowed"
-                  : "bg-primary"
-              }`}
+              disabled={!roleName.trim()}
+              onClick={() => setStep(2)}
+              className="px-4 py-2 text-sm bg-primary text-white rounded-lg 
+                disabled:opacity-50 disabled:cursor-not-allowed hover:bg-primaryDark 
+                transition-colors font-medium"
             >
               Next
             </button>
-          ) : (
+          )}
+
+          {step === 2 && (
+            <button
+              disabled={selectedModules.length === 0}
+              onClick={() => setStep(3)}
+              className="px-4 py-2 text-sm bg-primary text-white rounded-lg 
+                disabled:opacity-50 disabled:cursor-not-allowed hover:bg-primaryDark 
+                transition-colors font-medium"
+            >
+              Next
+            </button>
+          )}
+
+          {step === 3 && (
             <button
               onClick={handleSave}
-              className="px-6 py-2 rounded-lg bg-primary text-white"
+              disabled={
+                addRoleMutation.isPending ||
+                updateRoleMutation.isPending ||
+                addRolePermissionsMutation.isPending ||
+                deleteRolePermissionsMutation.isPending
+              }
+              className="px-4 py-2 text-sm bg-primary text-white rounded-lg hover:bg-primaryDark 
+                disabled:opacity-50 disabled:cursor-not-allowed transition-colors font-medium"
             >
-              Save Role
+              {addRoleMutation.isPending ||
+              updateRoleMutation.isPending ||
+              addRolePermissionsMutation.isPending ||
+              deleteRolePermissionsMutation.isPending
+                ? "Saving..."
+                : "Save"}
             </button>
           )}
         </div>

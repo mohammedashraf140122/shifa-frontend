@@ -21,17 +21,32 @@
   box-shadow: 0 0 0 2px rgba(16, 185, 129, 0.15);
 }
 
+.dark .input {
+  background-color: #1f2937;
+  border-color: #374151;
+  color: #f9fafb;
+}
+
+.dark .input::placeholder {
+  color: #6b7280;
+}
+
+.dark .input:focus {
+  border-color: #10b981;
+  background-color: #1f2937;
+}
+
 /* ===== Textarea ===== */
 .textarea {
   width: 100%;
-  min-height: 80px;              /* أصغر شوية من قبل */
+  min-height: 80px;
   padding: 10px 14px;
   border-radius: 8px;
   border: 1px solid #d1d5db;
   background-color: #ffffff;
   font-size: 14px;
   color: #111827;
-  resize: vertical;              /* يمنع التمدد الغريب */
+  resize: vertical;
   transition: border-color 0.2s ease, box-shadow 0.2s ease;
 }
 
@@ -41,13 +56,28 @@
   box-shadow: 0 0 0 2px rgba(16, 185, 129, 0.15);
 }
 
+.dark .textarea {
+  background-color: #1f2937;
+  border-color: #374151;
+  color: #f9fafb;
+}
+
+.dark .textarea:focus {
+  border-color: #10b981;
+  background-color: #1f2937;
+}
+
 /* ===== Labels ===== */
 label {
   display: block;
-  margin-bottom: 6px;            /* مسافة أوضح */
+  margin-bottom: 6px;
   font-size: 12px;
   font-weight: 500;
   color: #374151;
+}
+
+.dark label {
+  color: #d1d5db;
 }
 
 /* ===== Buttons ===== */
@@ -60,11 +90,17 @@ label {
   font-weight: 500;
   border: none;
   cursor: pointer;
-  transition: background-color 0.2s ease;
+  transition: background-color 0.2s ease, box-shadow 0.2s ease;
 }
 
 .btn-primary:hover {
   background: #059669;
+  box-shadow: 0 4px 6px -1px rgba(16, 185, 129, 0.2);
+}
+
+.btn-primary:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 
 .btn-outline {
@@ -82,4 +118,15 @@ label {
 .btn-outline:hover {
   background: #f9fafb;
   border-color: #9ca3af;
+}
+
+.dark .btn-outline {
+  background: #1f2937;
+  border-color: #374151;
+  color: #d1d5db;
+}
+
+.dark .btn-outline:hover {
+  background: #374151;
+  border-color: #4b5563;
 }

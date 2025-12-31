@@ -2,14 +2,26 @@ import { useState, useEffect } from "react";
 import { useOutletContext } from "react-router-dom";
 import { IoCheckmarkDone, IoClose } from "react-icons/io5";
 import { HiOutlinePencilSquare } from "react-icons/hi2";
+import { toast } from "react-toastify";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   getBranches,
   addBranches,
   updateBranches,
-} from "../../../core/api/axios"; // ✅ نفس مسارك
+} from "../../../core/api/axios";
+import useRBAC from "../../../hooks/useRBAC";
+import { useAuth } from "../../../context/AuthContext";
+
+// Query keys
+const BRANCHES_QUERY_KEY = ["branches"];
 
 export default function BranchSettings() {
   const { lang } = useOutletContext();
+  const queryClient = useQueryClient();
+  const { loading: authLoading } = useAuth();
+  
+  // RBAC permissions
+  const rbac = useRBAC("Admin Settings", "System Settings");
 
   const t = {
     title: lang === "ar" ? "الفروع" : "Branches",
@@ -21,22 +33,24 @@ export default function BranchSettings() {
     name: lang === "ar" ? "اسم الفرع" : "Branch Name",
     arPlaceholder: "اسم الفرع بالعربي",
     enPlaceholder: "Branch name in English",
+    loadError: lang === "ar" ? "فشل تحميل الفروع" : "Failed to load branches",
+    saveSuccess:
+      lang === "ar" ? "تم حفظ الفرع بنجاح" : "Branch saved successfully",
+    saveError:
+      lang === "ar" ? "فشل حفظ الفرع" : "Failed to save branch",
   };
 
   const [branches, setBranches] = useState([]);
-  const [loading, setLoading] = useState(true);
 
-  /* =======================
-     GET BRANCHES
-  ======================= */
-  useEffect(() => {
-    fetchBranches();
-  }, []);
-
-  const fetchBranches = async () => {
-    try {
+  // Fetch branches using React Query
+  const {
+    data: branchesData,
+    isLoading: loading,
+    error,
+  } = useQuery({
+    queryKey: BRANCHES_QUERY_KEY,
+    queryFn: async () => {
       const res = await getBranches();
-
       const formatted = res.data.Branches.map(b => ({
         id: b.BranchID,
         name: {
@@ -47,23 +61,89 @@ export default function BranchSettings() {
         editing: false,
         isNew: false,
       }));
+      return formatted;
+    },
+    staleTime: 5 * 60 * 1000, // 5 minutes
+  });
 
-      setBranches(formatted);
-    } catch (err) {
-      console.error("Load branches failed", err);
-    } finally {
-      setLoading(false);
+  // Show error toast
+  useEffect(() => {
+    if (error) {
+      const status = error?.response?.status;
+      let msg;
+      
+      if (status === 502 || status === 503) {
+        msg = error?.response?.data?.message || 
+          (lang === "ar" ? "الخدمة غير متاحة مؤقتاً. يرجى المحاولة مرة أخرى لاحقاً." : "Service is temporarily unavailable. Please try again later.");
+      } else if (status === 500) {
+        msg = error?.response?.data?.message || 
+          (lang === "ar" ? "خطأ في الخادم. يرجى المحاولة مرة أخرى لاحقاً." : "Server error. Please try again later.");
+      } else {
+        msg = error?.response?.data?.message || error?.message || t.loadError;
+      }
+      
+      toast.error(msg);
     }
-  };
+  }, [error, t.loadError, lang]);
+
+  // Update branches when data changes
+  useEffect(() => {
+    if (branchesData) {
+      setBranches(branchesData);
+    }
+  }, [branchesData]);
+
+  // Add mutation
+  const addMutation = useMutation({
+    mutationFn: (branch) =>
+      addBranches([
+        {
+          BranchName: branch.tempName.en,
+          BranchNameAr: branch.tempName.ar,
+        },
+      ]),
+    onSuccess: () => {
+      toast.success(t.saveSuccess);
+      queryClient.invalidateQueries({ queryKey: BRANCHES_QUERY_KEY });
+    },
+    onError: () => {
+      toast.error(t.saveError);
+    },
+  });
+
+  // Update mutation
+  const updateMutation = useMutation({
+    mutationFn: (branch) =>
+      updateBranches([
+        {
+          BranchID: branch.id,
+          NewName: branch.tempName.en,
+          NewNameAr: branch.tempName.ar,
+        },
+      ]),
+    onSuccess: () => {
+      toast.success(t.saveSuccess);
+      queryClient.invalidateQueries({ queryKey: BRANCHES_QUERY_KEY });
+    },
+    onError: () => {
+      toast.error(t.saveError);
+    },
+  });
 
   /* =======================
      ADD BRANCH (UI)
   ======================= */
   const addBranch = () => {
+    // Permission guard
+    if (!rbac.canPerformCreate) {
+      toast.error(lang === "ar" ? "ليس لديك صلاحية لإضافة فرع" : "You don't have permission to add branch");
+      return;
+    }
+    
     setBranches(prev => [
       ...prev,
       {
-        id: Date.now(), // مؤقت
+        id: Date.now(),
         name: { ar: "", en: "" },
         tempName: { ar: "", en: "" },
         editing: true,
@@ -76,6 +156,12 @@ export default function BranchSettings() {
      START EDIT
   ======================= */
   const startEdit = id => {
+    // Permission guard
+    if (!rbac.canPerformEdit) {
+      toast.error(lang === "ar" ? "ليس لديك صلاحية لتعديل فرع" : "You don't have permission to edit branch");
+      return;
+    }
+    
     setBranches(prev =>
       prev.map(b =>
         b.id === id
@@ -101,46 +187,53 @@ export default function BranchSettings() {
   /* =======================
      SAVE (ADD / UPDATE)
   ======================= */
- const saveBranch = async (branch) => {
-  try {
-    // 🟢 ADD NEW
+  const saveBranch = async (branch) => {
+    // Permission guards
+    if (branch.isNew && !rbac.canPerformCreate) {
+      toast.error(lang === "ar" ? "ليس لديك صلاحية لإضافة فرع" : "You don't have permission to add branch");
+      return;
+    }
+    if (!branch.isNew && !rbac.canPerformEdit) {
+      toast.error(lang === "ar" ? "ليس لديك صلاحية لتعديل فرع" : "You don't have permission to edit branch");
+      return;
+    }
+    
     if (branch.isNew) {
-      await addBranches([
-        {
-          BranchName: branch.tempName.en,
-          BranchNameAr: branch.tempName.ar,
+      addMutation.mutate(branch, {
+        onSuccess: () => {
+          setBranches(prev =>
+            prev.map(b =>
+              b.id === branch.id
+                ? {
+                    ...b,
+                    name: { ...b.tempName },
+                    editing: false,
+                    isNew: false,
+                  }
+                : b
+            )
+          );
         },
-      ]);
-    }
-    // 🔵 UPDATE EXISTING
-    else {
-      await updateBranches([
-        {
-          BranchID: branch.id,
-          NewName: branch.tempName.en,
-          NewNameAr: branch.tempName.ar,
+      });
+    } else {
+      updateMutation.mutate(branch, {
+        onSuccess: () => {
+          setBranches(prev =>
+            prev.map(b =>
+              b.id === branch.id
+                ? {
+                    ...b,
+                    name: { ...b.tempName },
+                    editing: false,
+                    isNew: false,
+                  }
+                : b
+            )
+          );
         },
-      ]);
+      });
     }
-
-    setBranches(prev =>
-      prev.map(b =>
-        b.id === branch.id
-          ? {
-              ...b,
-              name: { ...b.tempName },
-              editing: false,
-              isNew: false,
-            }
-          : b
-      )
-    );
-  } catch (err) {
-    console.error("Save branch failed", err);
-    alert("Failed to save branch");
-  }
-};
-
+  };
 
   /* =======================
      CANCEL EDIT
@@ -157,8 +250,33 @@ export default function BranchSettings() {
     );
   };
 
-  if (loading) {
-    return <div className="p-6 text-sm text-grayTextLight">Loading...</div>;
+  // Loading state
+  if (authLoading || loading) {
+    return (
+      <div className="p-6 text-sm text-grayTextLight">
+        {lang === "ar" ? "جاري التحميل..." : "Loading..."}
+      </div>
+    );
+  }
+
+  // Error state
+  if (error) {
+    return (
+      <div className="p-6 text-sm text-danger">
+        {t.loadError}
+      </div>
+    );
+  }
+
+  // Permission guard - check if user has Read permission
+  if (!rbac.canRead) {
+    return (
+      <div className="bg-white rounded-xl border border-grayMedium p-6 text-center">
+        <p className="text-sm text-grayTextLight">
+          {lang === "ar" ? "ليس لديك صلاحية لعرض هذه الصفحة" : "You don't have permission to view this page"}
+        </p>
+      </div>
+    );
   }
 
   /* =======================
@@ -173,12 +291,19 @@ export default function BranchSettings() {
           <p className="text-sm text-grayTextLight text-left">{t.desc}</p>
         </div>
 
-        <button
-          onClick={addBranch}
-          className="px-4 py-2 text-sm font-medium rounded-lg bg-primary text-white"
-        >
-          {t.add}
-        </button>
+        {rbac.showCreateButton && (
+          <button
+            onClick={addBranch}
+            disabled={!rbac.canPerformCreate}
+            className={`px-4 py-2 text-sm font-medium rounded-lg transition ${
+              rbac.canPerformCreate
+                ? "bg-primary text-white hover:bg-primaryDark cursor-pointer"
+                : "bg-gray-300 text-gray-500 cursor-not-allowed opacity-50"
+            }`}
+          >
+            {t.add}
+          </button>
+        )}
       </div>
 
       {/* Table */}
@@ -240,10 +365,10 @@ export default function BranchSettings() {
                     {branch.editing ? (
                       <>
                         <button
-                          disabled={!canSave}
+                          disabled={!canSave || addMutation.isPending || updateMutation.isPending}
                           onClick={() => saveBranch(branch)}
                           className={`${
-                            canSave
+                            canSave && !addMutation.isPending && !updateMutation.isPending
                               ? "text-success"
                               : "text-gray-300 cursor-not-allowed"
                           }`}
@@ -259,12 +384,20 @@ export default function BranchSettings() {
                         </button>
                       </>
                     ) : (
-                      <button
-                        onClick={() => startEdit(branch.id)}
-                        className="text-primary hover:text-primaryDark"
-                      >
-                        <HiOutlinePencilSquare className="text-lg" />
-                      </button>
+                      rbac.showEditButton && (
+                        <button
+                          onClick={() => startEdit(branch.id)}
+                          disabled={!rbac.canPerformEdit}
+                          className={`${
+                            rbac.canPerformEdit
+                              ? "text-primary hover:text-primaryDark cursor-pointer"
+                              : "text-gray-300 cursor-not-allowed opacity-50"
+                          }`}
+                          title={rbac.canPerformEdit ? (lang === "ar" ? "تعديل" : "Edit") : (lang === "ar" ? "ليس لديك صلاحية للتعديل" : "No permission to edit")}
+                        >
+                          <HiOutlinePencilSquare className="text-lg" />
+                        </button>
+                      )
                     )}
                   </td>
                 </tr>

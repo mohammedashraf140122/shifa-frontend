@@ -3,9 +3,7 @@ import { useOutletContext } from "react-router-dom";
 import {
   IoCheckmarkDone,
   IoClose,
-  IoTrashOutline,
 } from "react-icons/io5";
-import { HiOutlinePencilSquare } from "react-icons/hi2";
 import {
   getModules,
   addModules,
@@ -13,9 +11,17 @@ import {
   deleteModules,
 } from "../../../core/api/axios";
 import { toast } from "react-toastify";
+import { devError } from "../../../core/utils/devLog";
+import useRBAC from "../../../hooks/useRBAC";
+import { useAuth } from "../../../context/AuthContext";
+import ActionButtons from "../../../components/RBAC/ActionButtons";
 
 export default function ModulesSettings({ modules, setModules }) {
   const { lang } = useOutletContext();
+  const { loading } = useAuth();
+
+  /* ================= RBAC ================= */
+  const rbac = useRBAC("Admin Settings", "System Settings");
 
   const t = {
     title: lang === "ar" ? "الوحدات" : "Modules",
@@ -32,8 +38,8 @@ export default function ModulesSettings({ modules, setModules }) {
      GET MODULES
   ======================= */
   useEffect(() => {
-    fetchModules();
-  }, []);
+    if (rbac.canRead) fetchModules();
+  }, [rbac.canRead]);
 
   const fetchModules = async () => {
     try {
@@ -51,7 +57,8 @@ export default function ModulesSettings({ modules, setModules }) {
 
       setModules(formatted);
     } catch (err) {
-      console.error("Load modules failed", err);
+      devError("Load modules failed", err);
+      toast.error("Failed to load modules");
     }
   };
 
@@ -59,6 +66,8 @@ export default function ModulesSettings({ modules, setModules }) {
      ADD MODULE (UI)
   ======================= */
   const addModule = () => {
+    if (!rbac.canPerformCreate) return;
+    
     setModules(prev => [
       ...prev,
       {
@@ -85,6 +94,8 @@ export default function ModulesSettings({ modules, setModules }) {
      SAVE MODULE (API)
   ======================= */
   const saveModule = async (id) => {
+    if (!rbac.canPerformEdit) return;
+    
     const module = modules.find(m => m.id === id);
     if (!module) return;
 
@@ -157,6 +168,8 @@ export default function ModulesSettings({ modules, setModules }) {
      DELETE MODULE (TOAST CONFIRM)
   ======================= */
   const deleteModule = (id) => {
+    if (!rbac.canPerformDelete) return;
+    
     toast.warn(
       ({ closeToast }) => (
         <div className="space-y-2">
@@ -245,7 +258,33 @@ export default function ModulesSettings({ modules, setModules }) {
   };
 
   /* =======================
-     UI (UNCHANGED)
+     LOADING GUARD
+  ======================= */
+  if (loading) {
+    return (
+      <div className="bg-white rounded-xl border border-grayMedium p-6 text-center">
+        <p className="text-sm text-grayTextLight">
+          {lang === "ar" ? "جاري تحميل الصلاحيات..." : "Loading permissions..."}
+        </p>
+      </div>
+    );
+  }
+
+  /* =======================
+     PERMISSION GUARD
+  ======================= */
+  if (!rbac.canRead) {
+    return (
+      <div className="bg-white rounded-xl border border-grayMedium p-6 text-center">
+        <p className="text-sm text-grayTextLight">
+          {lang === "ar" ? "ليس لديك صلاحية لعرض هذه الصفحة" : "You don't have permission to view this page"}
+        </p>
+      </div>
+    );
+  }
+
+  /* =======================
+     UI
   ======================= */
   return (
     <div className="bg-white rounded-xl border border-grayMedium p-6">
@@ -255,12 +294,14 @@ export default function ModulesSettings({ modules, setModules }) {
           <p className="text-sm text-grayTextLight">{t.desc}</p>
         </div>
 
-        <button
-          onClick={addModule}
-          className="px-4 py-2 text-sm font-medium rounded-lg bg-primary text-white"
-        >
-          {t.add}
-        </button>
+        {rbac.showCreateButton && (
+          <button
+            onClick={addModule}
+            className="px-4 py-2 text-sm font-medium rounded-lg bg-primary text-white hover:bg-primaryDark transition-colors"
+          >
+            {t.add}
+          </button>
+        )}
       </div>
 
       <div className="overflow-hidden rounded-lg border border-grayMedium">
@@ -303,17 +344,19 @@ export default function ModulesSettings({ modules, setModules }) {
                   <td className="px-4 py-3 text-right">
                     {module.editing ? (
                       <div className="flex justify-end gap-2">
-                        <button
-                          disabled={!canSave}
-                          onClick={() => saveModule(module.id)}
-                          className={
-                            canSave
-                              ? "text-success"
-                              : "text-gray-300 cursor-not-allowed"
-                          }
-                        >
-                          <IoCheckmarkDone className="text-xl" />
-                        </button>
+                        {rbac.canPerformEdit && (
+                          <button
+                            disabled={!canSave}
+                            onClick={() => saveModule(module.id)}
+                            className={
+                              canSave
+                                ? "text-success"
+                                : "text-gray-300 cursor-not-allowed"
+                            }
+                          >
+                            <IoCheckmarkDone className="text-xl" />
+                          </button>
+                        )}
                         <button
                           onClick={() => cancelEdit(module.id)}
                           className="text-danger"
@@ -322,29 +365,22 @@ export default function ModulesSettings({ modules, setModules }) {
                         </button>
                       </div>
                     ) : (
-                      <div className="flex justify-end gap-2">
-                        <button
-                          onClick={() =>
-                            setModules(prev =>
-                              prev.map(m =>
-                                m.id === module.id
-                                  ? { ...m, editing: true }
-                                  : m
-                              )
+                      <ActionButtons
+                        moduleName="Admin Settings"
+                        subModuleName="System Settings"
+                        onEdit={() => {
+                          setModules(prev =>
+                            prev.map(m =>
+                              m.id === module.id
+                                ? { ...m, editing: true }
+                                : m
                             )
-                          }
-                          className="text-primary hover:text-primaryDark"
-                        >
-                          <HiOutlinePencilSquare />
-                        </button>
-
-                        <button
-                          onClick={() => deleteModule(module.id)}
-                          className="text-danger hover:text-dangerDark"
-                        >
-                          <IoTrashOutline className="text-lg" />
-                        </button>
-                      </div>
+                          );
+                        }}
+                        onDelete={() => deleteModule(module.id)}
+                        editLabel={lang === "ar" ? "تعديل" : "Edit"}
+                        deleteLabel={lang === "ar" ? "حذف" : "Delete"}
+                      />
                     )}
                   </td>
                 </tr>

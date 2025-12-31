@@ -1,28 +1,33 @@
 import { useState } from "react";
 import { useOutletContext } from "react-router-dom";
-import { IoHome, IoLogoDocker } from "react-icons/io5";
-import Permission from "./RBAC/Permission";
+import { IoShieldCheckmarkOutline, IoOptionsOutline } from "react-icons/io5";
 import Role from "./RBAC/Role";
+import Permission from "./RBAC/Permission";
 
-export default function RBACManagement({ modules = [], subModules = [] }) {
+export default function RBACManagement({ modules, subModules }) {
   const { lang } = useOutletContext();
-  const [activeTab, setActiveTab] = useState("permission");
+  const [activeTab, setActiveTab] = useState("roles");
 
   const tabs = [
     {
-      id: "permission",
-      label: lang === "ar" ? "الصلاحيات" : "Permission",
-      icon: IoHome,
+      id: "roles",
+      label: lang === "ar" ? "الأدوار" : "Roles",
+      icon: IoShieldCheckmarkOutline,
     },
     {
-      id: "role",
-      label: lang === "ar" ? "الأدوار" : "Role",
-      icon: IoLogoDocker,
+      id: "permissions",
+      label: lang === "ar" ? "الصلاحيات" : "Permissions",
+      icon: IoOptionsOutline,
     },
   ];
 
   return (
-    <div className="bg-white rounded-lg p-6 shadow">
+    <div className="bg-white rounded-xl border border-grayMedium p-6">
+      {/* Title */}
+      <h2 className="text-lg font-semibold mb-4 text-left">
+        {lang === "ar" ? "إدارة الأدوار والصلاحيات" : "RBAC Management"}
+      </h2>
+
       {/* Tabs */}
       <div className="flex gap-2 border-b border-grayMedium mb-6">
         {tabs.map(tab => {
@@ -34,17 +39,18 @@ export default function RBACManagement({ modules = [], subModules = [] }) {
               key={tab.id}
               onClick={() => setActiveTab(tab.id)}
               className={`relative flex items-center gap-2 px-4 py-3 text-sm font-medium
+                transition-all
                 ${
                   isActive
-                    ? "text-[#475569]"
-                    : "text-grayTextLight hover:text-[#475569]"
+                    ? "text-primary"
+                    : "text-grayTextLight hover:text-primary"
                 }`}
             >
               <Icon className="text-lg" />
               {tab.label}
 
               {isActive && (
-                <span className="absolute bottom-0 left-0 w-full h-[2px] bg-[#475569]" />
+                <span className="absolute bottom-0 left-0 w-full h-[2px] bg-primary rounded-full" />
               )}
             </button>
           );
@@ -52,11 +58,10 @@ export default function RBACManagement({ modules = [], subModules = [] }) {
       </div>
 
       {/* Content */}
-      {activeTab === "permission" && (
-        <Permission modules={modules} subModules={subModules} />
-      )}
-
-      {activeTab === "role" && <Role />}
+      <div>
+        {activeTab === "roles" && <Role />}
+        {activeTab === "permissions" && <Permission />}
+      </div>
     </div>
   );
 }

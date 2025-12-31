@@ -7,9 +7,15 @@ export const useLogin = (navigate) => {
   return useMutation({
     mutationFn: loginApi,
     onSuccess: (data) => {
-      setTokens(data); // 👈 access + refresh + token_type
-      toast.success("Login successful");
-      navigate("/dashboard");
+      // Handle different response structures
+      const tokenData = data?.data || data;
+      setTokens(tokenData); // 👈 access + refresh + token_type
+      
+      // Small delay to ensure token is saved before navigation
+      setTimeout(() => {
+        toast.success("Login successful");
+        navigate("/dashboard");
+      }, 100);
     },
     onError: (error) => {
       toast.error(

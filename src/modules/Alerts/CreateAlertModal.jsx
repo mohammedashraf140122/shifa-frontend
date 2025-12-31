@@ -1,8 +1,11 @@
 import { useState } from "react";
 import { useAlerts } from "./alerts.store";
+import useRBAC from "../../hooks/useRBAC";
+import { toast } from "react-toastify";
 
 export default function CreateAlertModal({ onClose, editingAlert }) {
   const { addAlert, updateAlert } = useAlerts();
+  const rbac = useRBAC("Alerts", "Alerts");
 
   const [title, setTitle] = useState(editingAlert?.title || "");
   const [message, setMessage] = useState(editingAlert?.message || "");
@@ -12,7 +15,24 @@ export default function CreateAlertModal({ onClose, editingAlert }) {
 
   const limits = { minutes: 60, hours: 24, days: 31 };
 
+  // Permission guard - hide modal if no permissions
+  if (editingAlert && !rbac.canPerformEdit) {
+    return null;
+  }
+  if (!editingAlert && !rbac.canPerformCreate) {
+    return null;
+  }
+
   const handleSubmit = () => {
+    // Permission guards
+    if (editingAlert && !rbac.canPerformEdit) {
+      toast.error("You don't have permission to edit alerts");
+      return;
+    }
+    if (!editingAlert && !rbac.canPerformCreate) {
+      toast.error("You don't have permission to create alerts");
+      return;
+    }
     const durationMs =
       unit === "minutes"
         ? value * 60 * 1000

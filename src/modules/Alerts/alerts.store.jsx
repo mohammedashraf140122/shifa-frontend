@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useState } from "react";
+import { createContext, useContext, useEffect, useState, useMemo, useCallback } from "react";
 
 const AlertsContext = createContext();
 
@@ -19,38 +19,42 @@ export function AlertsProvider({ children }) {
     return () => clearInterval(timer);
   }, []);
 
-  const addAlert = (alert) => {
+  const addAlert = useCallback((alert) => {
     setAlerts((prev) => [...prev, alert]);
-  };
+  }, []);
 
-  const updateAlert = (updated) => {
+  const updateAlert = useCallback((updated) => {
     setAlerts((prev) =>
       prev.map((a) => (a.id === updated.id ? updated : a))
     );
-  };
+  }, []);
 
-  const deleteAlert = (id) => {
+  const deleteAlert = useCallback((id) => {
     setAlerts((prev) => prev.filter((a) => a.id !== id));
-  };
+  }, []);
 
-  const toggleAlert = (id) => {
+  const toggleAlert = useCallback((id) => {
     setAlerts((prev) =>
       prev.map((a) =>
         a.id === id ? { ...a, active: !a.active } : a
       )
     );
-  };
+  }, []);
+
+  // ✅ Memoize context value to prevent unnecessary re-renders
+  const contextValue = useMemo(
+    () => ({
+      alerts,
+      addAlert,
+      updateAlert,
+      deleteAlert,
+      toggleAlert,
+    }),
+    [alerts, addAlert, updateAlert, deleteAlert, toggleAlert]
+  );
 
   return (
-    <AlertsContext.Provider
-      value={{
-        alerts,
-        addAlert,
-        updateAlert,
-        deleteAlert,
-        toggleAlert,
-      }}
-    >
+    <AlertsContext.Provider value={contextValue}>
       {children}
     </AlertsContext.Provider>
   );

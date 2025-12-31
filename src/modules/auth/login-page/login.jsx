@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { IoSunny, IoMoon } from "react-icons/io5";
 import Logo from "../../../assets/images/logo-en-ar.png";
 import "../../../css/login.css";
@@ -6,11 +6,13 @@ import { useNavigate, Navigate } from "react-router-dom";
 import { toast } from "react-toastify";
 import { useLogin } from "../../../hooks/useLogin.js";
 import { loginSchema } from "../../../validation/login.schema";
+import { getAccessToken } from "../../../core/utils/token";
 
 
 export default function Login() {
   const [lang, setLang] = useState("en");
   const [dark, setDark] = useState(false);
+  const [hasToken, setHasToken] = useState(false);
 
   // ✅ نفس الفورم – مضاف state فقط
   const [username, setUsername] = useState("");
@@ -19,8 +21,15 @@ export default function Login() {
   const navigate = useNavigate();
   const loginMutation = useLogin(navigate);
 
+  // ✅ Check token in useEffect instead of render
+  useEffect(() => {
+    // Fix: Use Cookies instead of localStorage
+    const token = getAccessToken();
+    setHasToken(!!token);
+  }, []);
+
   // لو عامل login قبل كده
-  if (localStorage.getItem("access_token")) {
+  if (hasToken) {
     return <Navigate to="/dashboard" replace />;
   }
 
@@ -121,32 +130,40 @@ export default function Login() {
               type="text"
               value={username}
               onChange={(e) => setUsername(e.target.value)}
-              className="w-full mb-3 p-2 rounded-md border border-primary/30"
-              placeholder="User Name"
+              className="w-full mb-3 px-3 py-2.5 text-sm rounded-lg border border-grayMedium dark:border-gray-700 
+                bg-white dark:bg-gray-800 text-grayTextDark dark:text-gray-200
+                focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent
+                transition-all"
+              placeholder={lang === "ar" ? "اسم المستخدم" : "User Name"}
             />
 
             {/* PASSWORD */}
-            <label className="text-xs font-medium">
+            <label className="text-xs font-medium text-grayTextDark dark:text-gray-300">
               {lang === "ar" ? "كلمة المرور" : "Password"}
             </label>
             <input
               type="password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
-              className="w-full mb-4 p-2 rounded-md border border-primary/30"
-              placeholder="••••••••"
+              className="w-full mb-4 px-3 py-2.5 text-sm rounded-lg border border-grayMedium dark:border-gray-700 
+                bg-white dark:bg-gray-800 text-grayTextDark dark:text-gray-200
+                focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent
+                transition-all"
+              placeholder={lang === "ar" ? "كلمة المرور" : "Password"}
             />
 
-            {/* LOGIN BUTTON – شغال */}
+            {/* LOGIN BUTTON */}
             <button
               onClick={handleLogin}
               disabled={loginMutation.isPending}
               className="w-full bg-gradient-to-r from-primary to-primaryDark
               hover:from-primaryDark hover:to-primaryDarker
-              text-white p-2 rounded-md font-semibold"
+              text-white px-4 py-2.5 rounded-lg font-semibold text-sm
+              disabled:opacity-50 disabled:cursor-not-allowed
+              transition-all duration-200 shadow-md hover:shadow-lg"
             >
               {loginMutation.isPending
-                ? "Loading..."
+                ? (lang === "ar" ? "جاري تسجيل الدخول..." : "Logging in...")
                 : lang === "ar"
                 ? "تسجيل الدخول"
                 : "Login"}

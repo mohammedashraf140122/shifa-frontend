@@ -23,14 +23,6 @@ export default function MainLayout() {
 
   return (
     <>
-     <ToastContainer
-        position="top-right"
-        autoClose={4000}
-        hideProgressBar={false}
-        closeOnClick
-        pauseOnHover
-        draggable
-      />
     <div
   className={`${dark ? "dark" : ""} flex h-screen 
   bg-grayLight dark:bg-gray-900 transition-colors duration-300`}

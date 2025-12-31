@@ -1,10 +1,10 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { IoChatbubblesOutline, IoCloseOutline, IoExpandOutline } from "react-icons/io5";
 import ChatPopup from "./ChatPopup";
 import "./ChatWidget.css";
 
 export default function ChatWidget({ lang }) {
-  const [isVisible, setIsVisible] = useState(true);
+  const [isVisible] = useState(true);
   const [openChat, setOpenChat] = useState(false);
 
   const unreadCount = 2;
